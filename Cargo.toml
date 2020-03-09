@@ -8,7 +8,7 @@ edition = "2018"
 
 [[bin]]
 name = "trust-china-dns"
-path = "src/main.rs"
+path = "bin/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
