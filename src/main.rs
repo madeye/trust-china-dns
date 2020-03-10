@@ -702,9 +702,10 @@ impl DnsPacket {
 
     pub fn get_random_a(&self) -> Option<Ipv4Addr> {
         if !self.answers.is_empty() {
-            let a_record = &self.answers[0];
-            if let DnsRecord::A { addr, .. } = *a_record {
-                return Some(addr);
+            for a_record in &self.answers {
+                if let DnsRecord::A { addr, .. } = *a_record {
+                    return Some(addr);
+                }
             }
         }
 
@@ -713,9 +714,10 @@ impl DnsPacket {
 
     pub fn get_random_aaaa(&self) -> Option<Ipv6Addr> {
         if !self.answers.is_empty() {
-            let aaaa_record = &self.answers[0];
-            if let DnsRecord::AAAA { addr, .. } = *aaaa_record {
-                return Some(addr);
+            for aaaa_record in &self.answers {
+                if let DnsRecord::AAAA { addr, .. } = *aaaa_record {
+                    return Some(addr);
+                }
             }
         }
 
@@ -799,7 +801,7 @@ async fn udp_lookup(qname: &str, qtype: QueryType, server: SocketAddr) -> Result
 
     packet.header.id = 6666;
     packet.header.questions = 1;
-    packet.header.recursion_desired = false;
+    packet.header.recursion_desired = true;
     packet
         .questions
         .push(DnsQuestion::new(qname.to_string(), qtype));
@@ -851,7 +853,7 @@ async fn socks5_lookup(
 
     packet.header.id = 6666;
     packet.header.questions = 1;
-    packet.header.recursion_desired = false;
+    packet.header.recursion_desired = true;
     packet
         .questions
         .push(DnsQuestion::new(qname.to_string(), qtype));
@@ -961,8 +963,8 @@ async fn main() -> Result<()> {
 
         let mut packet = DnsPacket::new();
         packet.header.id = request.header.id;
-        packet.header.recursion_desired = false;
-        packet.header.recursion_available = false;
+        packet.header.recursion_desired = true;
+        packet.header.recursion_available = true;
         packet.header.response = true;
 
         if request.questions.is_empty() {
