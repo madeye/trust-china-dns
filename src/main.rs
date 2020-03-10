@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::{future::Future, time::Duration};
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 
 use tokio::io::Result;
 use tokio::io::{Error, ErrorKind};
@@ -934,38 +934,47 @@ async fn acl_lookup(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     let mut reverse_resolver_cache = LruCache::new(8192);
 
-	let matches = App::new("trust-china-dns")
-		.version("0.1")
+    let matches = App::new("trust-china-dns")
+        .version("0.1")
         .about("Yet another ChinaDNS in Rust")
-		.author("Max Lv <max.c.lv@gmail.com>")
-		.arg(Arg::with_name("local")
-			 .long("local")
-			 .value_name("LOCAL_DNS")
-			 .help("Sets a custom local DNS server")
-			 .takes_value(true))
-		.arg(Arg::with_name("remote")
-			 .long("remote")
-			 .value_name("REMOTE_DNS")
-			 .help("Sets a custom remote DNS server")
-			 .takes_value(true))
-		.arg(Arg::with_name("socks5")
-			 .long("socks5")
-			 .value_name("SOCKS5")
-			 .help("Sets a custom SOCKS5 proxy")
-			 .takes_value(true))
-		.arg(Arg::with_name("listen")
-			 .long("listen")
-			 .value_name("LISTEN")
-			 .help("Sets a custom listen address")
-			 .takes_value(true))
-		.arg(Arg::with_name("acl")
-			 .long("acl")
-			 .value_name("ACL")
-			 .help("Sets a custom ACL path")
-			 .takes_value(true))
+        .author("Max Lv <max.c.lv@gmail.com>")
+        .arg(
+            Arg::with_name("local")
+                .long("local")
+                .value_name("LOCAL_DNS")
+                .help("Sets a custom local DNS server")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("remote")
+                .long("remote")
+                .value_name("REMOTE_DNS")
+                .help("Sets a custom remote DNS server")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("socks5")
+                .long("socks5")
+                .value_name("SOCKS5")
+                .help("Sets a custom SOCKS5 proxy")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("listen")
+                .long("listen")
+                .value_name("LISTEN")
+                .help("Sets a custom listen address")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("acl")
+                .long("acl")
+                .value_name("ACL")
+                .help("Sets a custom ACL path")
+                .takes_value(true),
+        )
         .get_matches();
 
     let local = matches.value_of("local").unwrap_or("114.114.114.114:53");
@@ -983,18 +992,10 @@ async fn main() -> Result<()> {
     let acl = matches.value_of("acl").unwrap_or("bypass-china.acl");
     println!("Load ACL file: {}", acl);
 
-    let local_addr: SocketAddr = local
-        .parse()
-        .expect("Unable to parse local address");
-    let remote_addr: SocketAddr = remote
-        .parse()
-        .expect("Unable to parse remote address");
-    let socks5_addr: SocketAddr = socks5
-        .parse()
-        .expect("Unable to parse socks5 address");
-    let listen_addr: SocketAddr = listen
-        .parse()
-        .expect("Unable to parse listen address");
+    let local_addr: SocketAddr = local.parse().expect("Unable to parse local address");
+    let remote_addr: SocketAddr = remote.parse().expect("Unable to parse remote address");
+    let socks5_addr: SocketAddr = socks5.parse().expect("Unable to parse socks5 address");
+    let listen_addr: SocketAddr = listen.parse().expect("Unable to parse listen address");
 
     let mut socket = UdpSocket::bind(listen_addr).await?;
     let acl = AccessControl::load_from_file(acl).expect("Failed to load ACL file");
