@@ -5,7 +5,25 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::prelude::*;
 
 use trust_china_dns::acl::AccessControl;
-use trust_china_dns::socks5::Address;
+use trust_china_dns::socks5::*;
+
+use std::{
+    future::Future,
+    time::Duration,
+};
+
+use tokio::time;
+
+pub async fn try_timeout<T, F>(fut: F, timeout: Option<Duration>) -> io::Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    match timeout {
+            Some(t) => time::timeout(t, fut).await?,
+            None => fut.await,
+        }
+    .map_err(From::from)
+}
 
 pub struct BytePacketBuffer {
     pub buf: [u8; 512],
@@ -778,7 +796,7 @@ impl DnsPacket {
     }
 }
 
-async fn udp_lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Result<DnsPacket> {
+async fn udp_lookup(qname: &str, qtype: QueryType, server: SocketAddr) -> Result<DnsPacket> {
     let mut socket = UdpSocket::bind(("0.0.0.0", 0)).await?;
 
     let mut packet = DnsPacket::new();
@@ -802,8 +820,31 @@ async fn udp_lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Resul
     DnsPacket::from_buffer(&mut res_buffer)
 }
 
-async fn tcp_lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Result<DnsPacket> {
-    let mut stream = TcpStream::connect(server).await?;
+async fn socks5_lookup(qname: &str, qtype: QueryType, socks5: SocketAddr, ns: SocketAddr) -> Result<DnsPacket> {
+    let mut stream = TcpStream::connect(socks5).await?;
+
+    // 1. Handshake
+    let hs = HandshakeRequest::new(vec![SOCKS5_AUTH_METHOD_NONE]);
+    hs.write_to(&mut stream).await?;
+    stream.flush().await?;
+
+    let hsp = HandshakeResponse::read_from(&mut stream).await?;
+    assert_eq!(hsp.chosen_method, SOCKS5_AUTH_METHOD_NONE);
+
+    // 2. Send request header
+    let addr = Address::SocketAddress(ns);
+    let h = TcpRequestHeader::new(Command::TcpConnect, addr);
+    h.write_to(&mut stream).await?;
+    stream.flush().await?;
+
+    let hp = TcpResponseHeader::read_from(&mut stream).await?;
+    match hp.reply {
+        Reply::Succeeded => (),
+        r => {
+            let err = io::Error::new(io::ErrorKind::Other, format!("{}", r));
+            return Err(err);
+        }
+    }
 
     let mut packet = DnsPacket::new();
 
@@ -827,18 +868,19 @@ async fn tcp_lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Resul
     stream.write_all(&send_buffer[0..size+2]).await?;
 
     let mut res_buffer = BytePacketBuffer::new();
-    stream.read(&mut size_buffer[0..2]).await?;
+    stream.read_exact(&mut size_buffer[0..2]).await?;
 
     let size = ((size_buffer[0] as usize) << 8) + (size_buffer[1] as usize);
-    stream.read(&mut res_buffer.buf[0..size]).await?;
+    stream.read_exact(&mut res_buffer.buf[0..size]).await?;
 
     DnsPacket::from_buffer(&mut res_buffer)
 }
 
 async fn acl_lookup(
     acl: &AccessControl,
-    local: &str,
-    remote: &str,
+    local: SocketAddr,
+    remote: SocketAddr,
+    socks5: SocketAddr,
     qname: &str,
     qtype: QueryType,
 ) -> Result<DnsPacket> {
@@ -848,8 +890,10 @@ async fn acl_lookup(
         qtype, qname, local, remote
     );
 
-    let local_response = udp_lookup(qname, qtype.clone(), (local, 53)).await?;
-    let remote_response = tcp_lookup(qname, qtype.clone(), (remote, 53)).await?;
+    let ten_seconds = Some(Duration::new(10, 0));
+
+    let local_response = try_timeout(udp_lookup(qname, qtype.clone(), local), ten_seconds).await?;
+    let remote_response = try_timeout(socks5_lookup(qname, qtype.clone(), socks5, remote), ten_seconds).await?;
 
     let addr = Address::DomainNameAddress(qname.to_string(), 0);
     let qname_bypassed = acl.check_target_bypassed(&addr).await;
@@ -885,6 +929,10 @@ async fn main() -> Result<()> {
     let mut socket = UdpSocket::bind(("0.0.0.0", 2053)).await?;
     let acl = AccessControl::load_from_file("bypass-china.acl").expect("Load ACL file");
 
+    let local_addr: SocketAddr = "114.114.114.114:53".parse().expect("Unable to parse local address");
+    let remote_addr: SocketAddr = "8.8.8.8:53".parse().expect("Unable to parse remote address");
+    let socks5_addr: SocketAddr = "127.0.0.1:1081".parse().expect("Unable to parse socks5 address");
+
     loop {
         let mut req_buffer = BytePacketBuffer::new();
         let (_, src) = match socket.recv_from(&mut req_buffer.buf).await {
@@ -917,8 +965,9 @@ async fn main() -> Result<()> {
 
             if let Ok(result) = acl_lookup(
                 &acl,
-                "114.114.114.114",
-                "8.8.8.8",
+                local_addr,
+                remote_addr,
+                socks5_addr,
                 &question.name,
                 question.qtype,
             )
