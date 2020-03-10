@@ -1,15 +1,14 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{future::Future, time::Duration};
+
 use tokio::io::Result;
 use tokio::io::{Error, ErrorKind};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::prelude::*;
+use tokio::time;
 
 use trust_china_dns::acl::AccessControl;
 use trust_china_dns::socks5::*;
-
-use std::{future::Future, time::Duration};
-
-use tokio::time;
 
 pub async fn try_timeout<T, F>(fut: F, timeout: Option<Duration>) -> io::Result<T>
 where
