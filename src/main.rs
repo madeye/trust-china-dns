@@ -9,6 +9,8 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::prelude::*;
 use tokio::time;
 
+use lru::LruCache;
+
 use trust_china_dns::acl::AccessControl;
 use trust_china_dns::socks5::*;
 
@@ -933,6 +935,8 @@ async fn acl_lookup(
 #[tokio::main]
 async fn main() -> Result<()> {
 
+    let mut reverse_resolver_cache = LruCache::new(8192);
+
 	let matches = App::new("trust-china-dns")
 		.version("0.1")
         .about("Yet another ChinaDNS in Rust")
@@ -1040,6 +1044,12 @@ async fn main() -> Result<()> {
 
                 for rec in result.answers {
                     println!("Answer: {:?}", rec);
+                    if let DnsRecord::A { addr, .. } = rec {
+                        reverse_resolver_cache.put(IpAddr::from(addr), question.name.clone());
+                    }
+                    if let DnsRecord::AAAA { addr, .. } = rec {
+                        reverse_resolver_cache.put(IpAddr::from(addr), question.name.clone());
+                    }
                     packet.answers.push(rec);
                 }
                 for rec in result.authorities {
