@@ -1,6 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::{future::Future, time::Duration};
 
+use clap::{Arg, App};
+
 use tokio::io::Result;
 use tokio::io::{Error, ErrorKind};
 use tokio::net::{TcpStream, UdpSocket};
@@ -930,18 +932,68 @@ async fn acl_lookup(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut socket = UdpSocket::bind(("0.0.0.0", 2053)).await?;
-    let acl = AccessControl::load_from_file("bypass-china.acl").expect("Load ACL file");
 
-    let local_addr: SocketAddr = "114.114.114.114:53"
+	let matches = App::new("trust-china-dns")
+		.version("0.1")
+        .about("Yet another ChinaDNS in Rust")
+		.author("Max Lv <max.c.lv@gmail.com>")
+		.arg(Arg::with_name("local")
+			 .long("local")
+			 .value_name("LOCAL_DNS")
+			 .help("Sets a custom local DNS server")
+			 .takes_value(true))
+		.arg(Arg::with_name("remote")
+			 .long("remote")
+			 .value_name("REMOTE_DNS")
+			 .help("Sets a custom remote DNS server")
+			 .takes_value(true))
+		.arg(Arg::with_name("socks5")
+			 .long("socks5")
+			 .value_name("SOCKS5")
+			 .help("Sets a custom SOCKS5 proxy")
+			 .takes_value(true))
+		.arg(Arg::with_name("listen")
+			 .long("listen")
+			 .value_name("LISTEN")
+			 .help("Sets a custom listen address")
+			 .takes_value(true))
+		.arg(Arg::with_name("acl")
+			 .long("acl")
+			 .value_name("ACL")
+			 .help("Sets a custom ACL path")
+			 .takes_value(true))
+        .get_matches();
+
+    let local = matches.value_of("local").unwrap_or("114.114.114.114:53");
+    println!("Local DNS server: {}", local);
+
+    let remote = matches.value_of("remote").unwrap_or("8.8.8.8:53");
+    println!("Remote DNS server: {}", remote);
+
+    let socks5 = matches.value_of("socks5").unwrap_or("127.0.0.1:1080");
+    println!("SOCKS5 server: {}", socks5);
+
+    let listen = matches.value_of("listen").unwrap_or("127.0.0.1:2053");
+    println!("Listen on {}", listen);
+
+    let acl = matches.value_of("acl").unwrap_or("bypass-china.acl");
+    println!("Load ACL file: {}", acl);
+
+    let local_addr: SocketAddr = local
         .parse()
         .expect("Unable to parse local address");
-    let remote_addr: SocketAddr = "8.8.8.8:53"
+    let remote_addr: SocketAddr = remote
         .parse()
         .expect("Unable to parse remote address");
-    let socks5_addr: SocketAddr = "127.0.0.1:1081"
+    let socks5_addr: SocketAddr = socks5
         .parse()
         .expect("Unable to parse socks5 address");
+    let listen_addr: SocketAddr = listen
+        .parse()
+        .expect("Unable to parse listen address");
+
+    let mut socket = UdpSocket::bind(listen_addr).await?;
+    let acl = AccessControl::load_from_file(acl).expect("Failed to load ACL file");
 
     loop {
         let mut req_buffer = BytePacketBuffer::new();
